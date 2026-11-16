@@ -45,7 +45,7 @@ function select(id) {
   if (es) es.close();
   if (!id) return;
   location.hash = id; $('picker').value = id;
-  es = new EventSource(`/api/games/${id}/events`);
+  es = new EventSource(`/api/games/${encodeURIComponent(id)}/events`);
   es.addEventListener('state', (e) => render(JSON.parse(e.data)));
 }
 async function refresh() {

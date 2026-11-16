@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { Game, postJson, validSpeed } from './game.js';
 import { randInt } from './ai.js';
@@ -8,6 +8,7 @@ import { randInt } from './ai.js';
 const MAX_BODY = 64 * 1024;
 const UI = readFileSync(new URL('../public/index.html', import.meta.url));
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
+const sameToken = (a, b) => typeof a === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const COLORS = ['black', 'red'];
 
 function readBody(req) {
@@ -111,7 +112,7 @@ export function createApp(opts = {}) {
     }],
     ['POST', /^\/peer\/games\/([^/]+)\/moves$/, async (_r, p, b) => {
       const g = get(p[0]);
-      if (!g.token || b.token !== g.token) throw new HttpError(401, 'bad token');
+      if (!g.token || !sameToken(b.token, g.token)) throw new HttpError(401, 'bad token');
       if (!Array.isArray(b.move?.path) || !Number.isInteger(b.ply)) throw new HttpError(400, 'ply and move.path required');
       const r = g.receive(b.ply, b.move);
       return [r.status, r.error ? { error: r.error } : { ok: true }];
@@ -131,7 +132,8 @@ export function createApp(opts = {}) {
         const push = (s) => res.write(`event: state\ndata: ${JSON.stringify(s)}\n\n`);
         push(g.snapshot());
         g.subs.add(push);
-        req.on('close', () => g.subs.delete(push));
+        const hb = setInterval(() => res.write(': hb\n\n'), 15000); // keep idle proxies from dropping the stream
+        req.on('close', () => { clearInterval(hb); g.subs.delete(push); });
         return;
       }
       for (const [method, re, handler] of routes) {
@@ -152,12 +154,12 @@ export function createApp(opts = {}) {
 
   return {
     server, games,
-    listen: (port = 0) => new Promise((resolve) => server.listen(port, () => resolve(server.address().port))),
+    listen: (port = 0, host = '127.0.0.1') => new Promise((resolve) => server.listen(port, host, () => resolve(server.address().port))),
     close: () => { games.forEach((g) => g.unschedule()); server.closeAllConnections?.(); return new Promise((r) => server.close(r)); },
   };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const port = Number(process.env.PORT ?? 3000);
-  createApp().listen(port).then(() => console.log(`checkers service on http://localhost:${port}`));
+  createApp().listen(port, process.env.HOST).then(() => console.log(`checkers service on http://localhost:${port}`));
 }

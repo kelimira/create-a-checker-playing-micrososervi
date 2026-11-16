@@ -1,0 +1,3 @@
+# create a checker playing micrososervi...
+
+create a checker playing micrososervice that can initiate a game, or join a game and play the other service.  I should be able to watch the game play in my browser, and have the option of speeding it up or slowing it down
